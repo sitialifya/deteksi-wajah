@@ -1,305 +1,158 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Deteksi Objek & Warna — OpenCV.js</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 18px; background:#fafafa; color:#111; }
-    h1 { font-size:1.3rem; margin-bottom:6px; }
-    #controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
-    select, button, input { padding:6px 8px; border-radius:6px; border:1px solid #ccc; background:#fff; }
-    #video, canvas { border-radius:6px; background:#000; }
-    #layout { display:flex; gap:12px; align-items:flex-start; }
-    #left { display:flex; flex-direction:column; gap:8px; }
-    #log { margin-top:8px; font-size:.9rem; color:#333; white-space:pre-wrap; max-width:540px; }
-    .badge { display:inline-block; padding:4px 8px; border-radius:999px; background:#eee; font-size:.85rem; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deteksi Objek & Warna - TensorFlow.js</title>
+
+<style>
+    body { font-family: Arial, sans-serif; background:#f1f1f1; padding:20px; }
+    h1 { font-size:22px; }
+    #video, #canvas { border-radius:10px; background:#000; }
+    .row { display:flex; gap:20px; flex-wrap:wrap; }
+    .panel { max-width:400px; }
+    #log { white-space:pre-line; font-size:14px; }
+</style>
 </head>
 <body>
-  <h1>Deteksi Objek & Warna (OpenCV.js)</h1>
-  <div id="controls">
-    <label class="badge">Sumber:</label>
-    <select id="camSelect"></select>
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" disabled>Stop</button>
-    <label for="fileInput">atau Upload gambar</label>
-    <input type="file" id="fileInput" accept="image/*,video/*">
-    <label class="badge">Cascade URL (opsional):</label>
-    <input id="cascadeUrl" style="width:320px" value="https://sismadi.github.io/disertasi/p1/haarcascade_frontalface_default.xml">
-    <button id="loadCascadeBtn">Load Cascade</button>
-  </div>
 
-  <div id="layout">
-    <div id="left">
-      <video id="video" width="640" height="480" autoplay muted playsinline></video>
-      <canvas id="canvasOut" width="640" height="480"></canvas>
+<h1>Deteksi Objek & Warna (TensorFlow.js - COCO-SSD)</h1>
+
+<div class="row">
+    <div class="panel">
+        <video id="video" width="640" height="480" autoplay muted playsinline></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+
+        <div style="margin-top:10px;">
+            <button id="startBtn">Mulai Kamera</button>
+            <button id="stopBtn" disabled>Stop</button>
+        </div>
     </div>
-    <div id="right">
-      <div><strong>Info:</strong> <span id="status">menunggu OpenCV...</span></div>
-      <div id="log"></div>
+
+    <div class="panel">
+        <h3>Status</h3>
+        <div id="status">Memuat TensorFlow.js...</div>
+
+        <h3>Log</h3>
+        <div id="log"></div>
     </div>
-  </div>
+</div>
 
-  <!-- OpenCV.js (dimuat dari dokumentasi resmi / CDN) -->
-  <script async src="https://docs.opencv.org/master/opencv.js" type="text/javascript"></script>
+<!-- TensorFlow.js + COCO-SSD -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-  <script>
-  // ============== Helper UI & state ==============
-  const video = document.getElementById('video');
-  const canvasOut = document.getElementById('canvasOut');
-  const ctx = canvasOut.getContext('2d');
-  const statusEl = document.getElementById('status');
-  const logEl = document.getElementById('log');
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const camSelect = document.getElementById('camSelect');
-  const fileInput = document.getElementById('fileInput');
-  const cascadeUrlInput = document.getElementById('cascadeUrl');
-  const loadCascadeBtn = document.getElementById('loadCascadeBtn');
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const statusEl = document.getElementById("status");
+const logEl = document.getElementById("log");
 
-  let stream = null;
-  let srcMat = null, gray = null;
-  let classifier = null;
-  let utils = null;
-  let cascadeFile = 'haarcascade_frontalface_default.xml'; // local name when loaded into FS
-  let cascadeLoaded = false;
-  let rafId = null;
+let model = null;
+let detectLoop = null;
+let stream = null;
 
-  // populate camera list
-  async function updateDevices() {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      camSelect.innerHTML = '';
-      devices.filter(d=>d.kind==='videoinput').forEach((d,i)=>{
-        const o = document.createElement('option');
-        o.value = d.deviceId;
-        o.textContent = d.label || 'Camera ' + (i+1);
-        camSelect.appendChild(o);
-      });
-    } catch(e){ console.warn(e); }
-  }
-  updateDevices();
-  navigator.mediaDevices.ondevicechange = updateDevices;
+function log(t) {
+    logEl.textContent += t + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+}
 
-  // ============== OpenCV ready ==============
-  function log(s){ logEl.textContent += s + "\n"; logEl.scrollTop = logEl.scrollHeight; }
-  function onOpenCvReady() {
-    statusEl.textContent = 'OpenCV.js siap';
-    utils = new Utils('errorMessage'); // Utils class comes from opencv.js examples (will create from below if missing)
-    classifier = new cv.CascadeClassifier();
-    // try to pre-load cascade from provided URL
-    loadCascadeFromUrl(cascadeUrlInput.value).catch(e=>log('Cascade initial load failed: '+e));
-  }
+async function loadModel() {
+    statusEl.textContent = "Memuat model COCO-SSD...";
+    model = await cocoSsd.load();
+    statusEl.textContent = "Model siap!";
+    log("Model COCO-SSD berhasil dimuat.");
+}
+loadModel();
 
-  // Wait for OpenCV to be ready
-  if (typeof cv === 'undefined') {
-    statusEl.textContent = 'Memuat OpenCV.js...';
-    // opencv.js will call cv['onRuntimeInitialized'] when ready
-    window.Module = {
-      onRuntimeInitialized() {
-        onOpenCvReady();
-      }
-    };
-  } else {
-    onOpenCvReady();
-  }
+// Mulai kamera
+startBtn.addEventListener("click", async () => {
+    stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 }
+    });
+    video.srcObject = stream;
 
-  // ============== Cascade load helper ==============
-  async function loadCascadeFromUrl(url) {
-    statusEl.textContent = 'Mengunduh cascade...';
-    log('Mengunduh cascade dari: ' + url);
-    // fetch file as arraybuffer then write to opencv FS
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const buf = await res.arrayBuffer();
-    // write to in-memory FS (Module.FS)
-    const data = new Uint8Array(buf);
-    try {
-      // remove if exists
-      if (cv.FS_readdir('.') .includes(cascadeFile)) {
-        try { cv.FS_unlink(cascadeFile); } catch(e) {}
-      }
-    } catch(e){}
-    cv.FS_createDataFile('/', cascadeFile, data, true, false, false);
-    // load classifier
-    classifier = new cv.CascadeClassifier();
-    const loaded = classifier.load(cascadeFile);
-    if (!loaded) throw new Error('Gagal load cascade');
-    cascadeLoaded = true;
-    statusEl.textContent = 'Cascade ter-load';
-    log('Cascade berhasil di-load.');
-  }
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
 
-  loadCascadeBtn.addEventListener('click', ()=> {
-    loadCascadeFromUrl(cascadeUrlInput.value).catch(e=>{ log('Load cascade error: '+e); statusEl.textContent='cascade gagal'; });
-  });
+    runDetection();
+});
 
-  // ============== Start/Stop camera ==============
-  startBtn.addEventListener('click', async ()=> {
-    if (stream) return;
-    const deviceId = camSelect.value || undefined;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: deviceId ? { deviceId } : { width:640, height:480 }, audio:false });
-      video.srcObject = stream;
-      await video.play();
-      startProcessing();
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-    } catch(e) {
-      log('getUserMedia error: ' + e);
-    }
-  });
-
-  stopBtn.addEventListener('click', ()=> {
-    stopProcessing();
+// Stop kamera
+stopBtn.addEventListener("click", () => {
     if (stream) {
-      stream.getTracks().forEach(t=>t.stop());
-      stream = null;
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
     }
+    cancelAnimationFrame(detectLoop);
     startBtn.disabled = false;
     stopBtn.disabled = true;
-  });
+    statusEl.textContent = "Kamera berhenti.";
+});
 
-  // ============== File upload ==============
-  fileInput.addEventListener('change', (ev)=>{
-    const f = ev.target.files[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    // if image -> draw once and process; if video -> set video source
-    if (f.type.startsWith('image/')) {
-      const img = new Image();
-      img.onload = ()=> {
-        canvasOut.width = img.width; canvasOut.height = img.height;
-        ctx.drawImage(img,0,0);
-        // process single frame
-        processFrame(true);
-      };
-      img.src = url;
-    } else {
-      // treat as video
-      stopProcessing();
-      if (stream) { stream.getTracks().forEach(t=>t.stop()); stream=null; }
-      video.srcObject = null;
-      video.src = url;
-      video.play();
-      startProcessing();
+function getDominantColor(imageData) {
+    // hitung rata-rata RGB
+    let r=0, g=0, b=0, count=0;
+    for (let i=0; i < imageData.data.length; i+=4) {
+        r += imageData.data[i];
+        g += imageData.data[i+1];
+        b += imageData.data[i+2];
+        count++;
     }
-  });
+    r /= count; g /= count; b /= count;
 
-  // ============== Processing loop ==============
-  function startProcessing(){
-    if (!cv || !video) return;
-    canvasOut.width = video.videoWidth || 640;
-    canvasOut.height = video.videoHeight || 480;
-    srcMat = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
-    gray = new cv.Mat();
-    rafId = requestAnimationFrame(processFrame);
-  }
+    return rgbToName(r, g, b);
+}
 
-  function stopProcessing(){
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = null;
-    if (srcMat) { srcMat.delete(); srcMat = null; }
-    if (gray) { gray.delete(); gray = null; }
-  }
+function rgbToName(r, g, b) {
+    if (r<60 && g<60 && b<60) return "black";
+    if (r>200 && g>200 && b>200) return "white";
 
-  function processFrame(single=false){
-    try {
-      // read frame
-      if (video && !video.paused && !video.ended && video.readyState >= 2) {
-        ctx.drawImage(video, 0, 0, canvasOut.width, canvasOut.height);
-      } else {
-        // if image was loaded into canvas already, keep it (for single image)
-      }
-      // get image data into mat
-      let imgData = ctx.getImageData(0,0,canvasOut.width,canvasOut.height);
-      if (!srcMat) srcMat = new cv.Mat(canvasOut.height, canvasOut.width, cv.CV_8UC4);
-      srcMat.data.set(imgData.data);
-      // convert to gray
-      cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
-      // equalize
-      cv.equalizeHist(gray, gray);
+    if (r>180 && g<80 && b<80) return "red";
+    if (r>180 && g>110 && b<80) return "yellow";
+    if (r<100 && g>150 && b<100) return "green";
+    if (r<100 && g<100 && b>150) return "blue";
+    if (r>150 && g<100 && b>150) return "purple";
+    return "other";
+}
 
-      // run cascade if loaded
-      let objects = new cv.RectVector();
-      let msize = new cv.Size(0,0);
-      if (cascadeLoaded && classifier) {
-        classifier.detectMultiScale(gray, objects, 1.1, 3, 0, msize, msize);
-      }
-      // draw rectangles & compute color for each ROI
-      for (let i=0;i<objects.size();i++){
-        const r = objects.get(i);
-        // draw rect
-        cv.rectangle(srcMat, new cv.Point(r.x, r.y), new cv.Point(r.x + r.width, r.y + r.height), [255,0,0,255], 2);
-        // sample ROI for dominant color
-        const roi = srcMat.roi(r);
-        const avg = meanHSV(roi); // returns {h,s,v}
-        const colorName = hsvToColorName(avg.h, avg.s, avg.v);
-        // put text
-        cv.putText(srcMat, colorName, new cv.Point(r.x, r.y - 8), cv.FONT_HERSHEY_SIMPLEX, 0.6, [255,255,0,255], 2);
-        roi.delete();
-      }
-
-      // show result
-      cv.imshow(canvasOut, srcMat);
-      objects.delete();
-      msize.delete();
-    } catch(err){
-      log('processFrame error: '+err);
+async function runDetection() {
+    if (!model) {
+        statusEl.textContent = "Model belum siap...";
+        detectLoop = requestAnimationFrame(runDetection);
+        return;
     }
 
-    if (!single) rafId = requestAnimationFrame(processFrame);
-  }
+    detectLoop = requestAnimationFrame(runDetection);
 
-  // ============== Color helpers ==============
-  function meanHSV(mat){
-    // convert mat (RGBA) to HSV and compute average H,S,V
-    let hsv = new cv.Mat();
-    cv.cvtColor(mat, hsv, cv.COLOR_RGBA2RGB); // first to RGB
-    cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
-    // split channels and get mean
-    let channels = new cv.MatVector();
-    cv.split(hsv, channels);
-    const hMean = cv.mean(channels.get(0))[0];
-    const sMean = cv.mean(channels.get(1))[0];
-    const vMean = cv.mean(channels.get(2))[0];
-    channels.delete(); hsv.delete();
-    // H in OpenCV = [0,180] (for 0..360 mapped), we remap to 0..360
-    return { h: (hMean * 2), s: sMean/255, v: vMean/255 };
-  }
+    const predictions = await model.detect(video);
+    
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-  function hsvToColorName(h,s,v){
-    // very simple mapping; extend as needed
-    if (v < 0.15) return 'black';
-    if (v > 0.9 && s < 0.15) return 'white';
-    if (s < 0.2) return 'gray';
-    if (h < 15 || h >= 345) return 'red';
-    if (h < 45) return 'orange';
-    if (h < 75) return 'yellow';
-    if (h < 165) return 'green';
-    if (h < 255) return 'blue';
-    if (h < 300) return 'purple';
-    return 'pink';
-  }
+    predictions.forEach(p => {
+        const [x, y, w, h] = p.bbox;
 
-  // ============== Utils fallback ==============
-  // Minimal Utils class used in many OpenCV.js examples for loading files
-  class Utils {
-    constructor(errorOutputId) {
-      this.printError = function(err) {
-        console.error(err);
-        log(err);
-      };
-    }
-  }
+        // ambil ROI (region of interest) untuk hitung warna
+        const roi = ctx.getImageData(x, y, w, h);
+        const colorName = getDominantColor(roi);
 
-  // expose for debugging
-  window.app = {
-    loadCascadeFromUrl,
-    startProcessing,
-    stopProcessing
-  };
-  </script>
+        // gambar kotak
+        ctx.strokeStyle = "yellow";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+
+        // label objek + warna
+        ctx.fillStyle = "yellow";
+        ctx.font = "16px Arial";
+        ctx.fillText(`${p.class} (${colorName})`, x, y > 20 ? y-5 : y+20);
+    });
+
+    statusEl.textContent = `Terdeteksi: ${predictions.length} objek`;
+}
+</script>
+
 </body>
 </html>
