@@ -1,188 +1,184 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Deteksi Objek & Warna - TensorFlow.js</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deteksi Objek & Warna</title>
 
-<style>
+  <!-- TFJS & COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <style>
     body {
-        font-family: Arial, sans-serif;
-        background: #f1f1f1;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+      font-family: 'Poppins', sans-serif;
+      text-align: center;
+      background: linear-gradient(180deg, #f9e5e9, #e7d2c8);
+      margin: 0;
+      padding: 0;
     }
 
     h1 {
-        margin-top: 20px;
-        margin-bottom: 10px;
+      margin-top: 30px;
+      font-size: 32px;
+      color: #6d4c41; /* coklat tua */
+      font-weight: 600;
+      text-shadow: 1px 1px 2px #f8c5d4;
     }
 
-    #wrapper {
-        position: relative;
-        display: inline-block;
-        margin-top: 20px;
+    .container {
+      width: 90%;
+      max-width: 700px;
+      margin: auto;
+      background: #fff6f7;
+      padding: 20px;
+      border-radius: 20px;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+      margin-top: 20px;
+      border: 3px solid #e1b7a4;
     }
 
-    #video, #canvas {
-        position: absolute;
-        top: 0; left: 0;
-        width: 640px;
-        height: 480px;
-        border-radius: 10px;
-    }
-
-    #canvas {
-        pointer-events: none; /* overlay, tidak bisa diklik */
-    }
-
-    #btnArea {
-        margin-top: 25px;
+    video, canvas {
+      width: 100%;
+      border-radius: 20px;
+      background: #fce4ec; 
+      margin-top: 15px;
+      border: 4px solid #e1b7a4;
     }
 
     button {
-        padding: 10px 18px;
-        font-size: 15px;
-        margin: 0 5px;
-        cursor: pointer;
+      padding: 12px 25px;
+      margin: 10px;
+      font-size: 16px;
+      border-radius: 30px;
+      border: none;
+      cursor: pointer;
+      transition: 0.2s;
+      font-weight: 600;
+    }
+
+    #startBtn {
+      background: #ffb6c1;
+      color: #6d4c41;
+      border: 3px solid #e1b7a4;
+    }
+
+    #startBtn:hover {
+      background: #ff9fb0;
+    }
+
+    #stopBtn {
+      background: #e7c6a3;
+      color: #4e342e;
+      border: 3px solid #d7a87a;
+    }
+
+    #stopBtn:hover {
+      background: #dcb792;
     }
 
     #status {
-        margin-top: 15px;
-        font-size: 16px;
+      margin-top: 12px;
+      color: #6d4c41;
+      font-weight: 500;
+      background: #ffeef3;
+      padding: 8px 15px;
+      display: inline-block;
+      border-radius: 15px;
+      border: 2px solid #e1b7a4;
     }
-</style>
+  </style>
 </head>
+
 <body>
 
-<h1>Deteksi Objek & Warna</h1>
+  <h1>🍫💗 Deteksi Objek & Warna 💗🍫</h1>
 
-<div id="wrapper">
-    <video id="video" autoplay muted playsinline></video>
+  <div class="container">
+    <button id="startBtn">Mulai Kamera 🎀</button>
+    <button id="stopBtn">Stop ❌</button>
+
+    <p id="status">Memuat model COCO-SSD...</p>
+
+    <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
-</div>
+  </div>
 
-<div id="btnArea">
-    <button id="startBtn">Mulai Kamera</button>
-    <button id="stopBtn" disabled>Stop</button>
-</div>
+  <script>
+    let model = null;
+    let stream = null;
+    let isRunning = false;
 
-<div id="status">Memuat model...</div>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusText = document.getElementById("status");
 
-<!-- Load TensorFlow.js + COCO-SSD -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.21.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-
-<script>
-let model;
-let stream;
-let running = false;
-
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
-
-canvas.width = 640;
-canvas.height = 480;
-
-// ----------------- LOAD MODEL -----------------
-(async () => {
-    statusEl.textContent = "Memuat model COCO-SSD...";
-    model = await cocoSsd.load();
-    statusEl.textContent = "Model siap. Klik 'Mulai Kamera'.";
-})();
-
-// ----------------- START CAMERA -----------------
-document.getElementById("startBtn").onclick = async () => {
-    stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 }
+    // LOAD MODEL
+    cocoSsd.load().then(m => {
+      model = m;
+      statusText.innerText = "Model siap! Klik Mulai Kamera 🎉";
     });
 
-    video.srcObject = stream;
+    // START CAMERA
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false,
+        });
 
-    running = true;
+        video.srcObject = stream;
+        isRunning = true;
+        statusText.innerText = "Kamera aktif 💗 Sedang mendeteksi... 🍫";
+        detectLoop();
 
-    document.getElementById("startBtn").disabled = true;
-    document.getElementById("stopBtn").disabled = false;
-
-    // Tunggu sampai video siap frame (WAJIB)
-    video.onloadeddata = () => detect();
-};
-
-// ----------------- STOP CAMERA -----------------
-document.getElementById("stopBtn").onclick = () => {
-    running = false;
-    if (stream) stream.getTracks().forEach(t => t.stop());
-
-    document.getElementById("startBtn").disabled = false;
-    document.getElementById("stopBtn").disabled = true;
-
-    statusEl.textContent = "Kamera berhenti.";
-};
-
-// ----------------- COLOR DETECTION -----------------
-function getColorName(r, g, b) {
-    if (r < 60 && g < 60 && b < 60) return "Black";
-    if (r > 200 && g > 200 && b > 200) return "White";
-    if (r > 180 && g < 80 && b < 80) return "Red";
-    if (r > 180 && g > 110 && b < 80) return "Yellow";
-    if (r < 80 && g > 150 && b < 80) return "Green";
-    if (r < 80 && g < 80 && b > 150) return "Blue";
-    return "Other";
-}
-
-function detectColor(x, y, w, h) {
-    const data = ctx.getImageData(x, y, w, h).data;
-
-    let r = 0, g = 0, b = 0, count = 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-        r += data[i];
-        g += data[i + 1];
-        b += data[i + 2];
-        count++;
+      } catch (err) {
+        statusText.innerText = "Gagal buka kamera: " + err;
+      }
     }
 
-    r /= count; g /= count; b /= count;
+    // DETECT LOOP
+    async function detectLoop() {
+      if (!isRunning) return;
 
-    return getColorName(r, g, b);
-}
+      const predictions = await model.detect(video);
 
-// ----------------- DETECTION LOOP -----------------
-async function detect() {
-    if (!running || !model) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const predictions = await model.detect(video);
+      predictions.forEach(p => {
+        ctx.beginPath();
+        ctx.rect(p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#ff80a5"; // pink highlight
+        ctx.stroke();
 
-    // Gambar dari video ke canvas
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#6d4c41";
+        ctx.font = "18px Poppins";
+        ctx.fillText(
+          `${p.class} (${Math.round(p.score * 100)}%)`, 
+          p.bbox[0], 
+          p.bbox[1] > 20 ? p.bbox[1] - 5 : 20
+        );
+      });
 
-    predictions.forEach(pred => {
-        let [x, y, w, h] = pred.bbox;
-        const label = pred.class;
+      requestAnimationFrame(detectLoop);
+    }
 
-        // ambil warna
-        const color = detectColor(x, y, w, h);
+    // STOP CAMERA
+    function stopCamera() {
+      isRunning = false;
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      statusText.innerText = "Kamera dimatikan ❌";
+    }
 
-        // gambar kotak
-        ctx.strokeStyle = "yellow";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, w, h);
+    document.getElementById("startBtn").onclick = startCamera;
+    document.getElementById("stopBtn").onclick = stopCamera;
+  </script>
 
-        // tulis label + warna
-        ctx.fillStyle = "yellow";
-        ctx.font = "16px Arial";
-        ctx.fillText(`${label} (${color})`, x, y - 5);
-    });
-
-    statusEl.textContent = `Objek terdeteksi: ${predictions.length}`;
-
-    requestAnimationFrame(detect);
-}
-</script>
 </body>
 </html>
