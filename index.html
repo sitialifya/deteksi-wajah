@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Deteksi Objek & Warna</title>
 
-  <!-- TFJS & COCO-SSD -->
+  <!-- TensorFlow -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-  <!-- Google Fonts -->
+  <!-- Font -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
 
   <style>
     body {
-      font-family: 'Poppins', sans-serif;
+      font-family: 'Poppins';
       text-align: center;
       background: linear-gradient(180deg, #f9e5e9, #e7d2c8);
       margin: 0;
@@ -22,52 +22,45 @@
     }
 
     h1 {
-      margin-top: 30px;
-      font-size: 32px;
-      color: #6d4c41; /* coklat tua */
-      font-weight: 600;
-      text-shadow: 1px 1px 2px #f8c5d4;
+      margin-top: 25px;
+      color: #6d4c41;
+      text-shadow: 1px 1px 2px #ffb6c1;
     }
 
-    .container {
+    .box {
       width: 90%;
       max-width: 700px;
       margin: auto;
-      background: #fff6f7;
       padding: 20px;
+      background: #fff6f7;
       border-radius: 20px;
+      border: 3px solid #d7b8a5;
       box-shadow: 0 6px 16px rgba(0,0,0,0.1);
-      margin-top: 20px;
-      border: 3px solid #e1b7a4;
     }
 
     video, canvas {
-      width: 100%;
-      border-radius: 20px;
-      background: #fce4ec; 
+      width: 640px;
+      height: 480px;
+      border-radius: 15px;
+      border: 4px solid #d7b8a5;
+      background: #fce4ec;
       margin-top: 15px;
-      border: 4px solid #e1b7a4;
     }
 
     button {
       padding: 12px 25px;
-      margin: 10px;
       font-size: 16px;
+      font-weight: 600;
       border-radius: 30px;
       border: none;
       cursor: pointer;
-      transition: 0.2s;
-      font-weight: 600;
+      margin: 10px;
     }
 
     #startBtn {
       background: #ffb6c1;
       color: #6d4c41;
-      border: 3px solid #e1b7a4;
-    }
-
-    #startBtn:hover {
-      background: #ff9fb0;
+      border: 3px solid #d7b8a5;
     }
 
     #stopBtn {
@@ -76,108 +69,135 @@
       border: 3px solid #d7a87a;
     }
 
-    #stopBtn:hover {
-      background: #dcb792;
+    #status {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 10px 20px;
+      background: #ffeef3;
+      color: #6d4c41;
+      border-radius: 15px;
+      border: 2px solid #d7b8a5;
+      font-weight: 500;
     }
 
-    #status {
-      margin-top: 12px;
-      color: #6d4c41;
-      font-weight: 500;
-      background: #ffeef3;
-      padding: 8px 15px;
-      display: inline-block;
-      border-radius: 15px;
-      border: 2px solid #e1b7a4;
+    #colorBox {
+      width: 50px;
+      height: 50px;
+      border-radius: 10px;
+      border: 3px solid #6d4c41;
+      margin: 10px auto;
     }
   </style>
 </head>
 
 <body>
 
-  <h1>🍫💗 Deteksi Objek & Warna 💗🍫</h1>
+  <h1>🎀🍫 Deteksi Objek + Warna 🍫🎀</h1>
 
-  <div class="container">
+  <div class="box">
     <button id="startBtn">Mulai Kamera 🎀</button>
     <button id="stopBtn">Stop ❌</button>
 
-    <p id="status">Memuat model COCO-SSD...</p>
+    <p id="status">Memuat model...</p>
 
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
+
+    <p style="margin-top: 15px; font-weight:600;">Warna Dominan Objek:</p>
+    <div id="colorBox"></div>
+    <p id="colorText"></p>
   </div>
 
   <script>
-    let model = null;
-    let stream = null;
-    let isRunning = false;
+    let model;
+    let stream;
+    let running = false;
 
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const statusText = document.getElementById("status");
+    const colorBox = document.getElementById("colorBox");
+    const colorText = document.getElementById("colorText");
 
     // LOAD MODEL
     cocoSsd.load().then(m => {
       model = m;
-      statusText.innerText = "Model siap! Klik Mulai Kamera 🎉";
+      statusText.innerText = "Model siap ✔ Klik Mulai Kamera";
     });
 
     // START CAMERA
-    async function startCamera() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: false,
-        });
-
-        video.srcObject = stream;
-        isRunning = true;
-        statusText.innerText = "Kamera aktif 💗 Sedang mendeteksi... 🍫";
-        detectLoop();
-
-      } catch (err) {
-        statusText.innerText = "Gagal buka kamera: " + err;
-      }
-    }
-
-    // DETECT LOOP
-    async function detectLoop() {
-      if (!isRunning) return;
-
-      const predictions = await model.detect(video);
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      predictions.forEach(p => {
-        ctx.beginPath();
-        ctx.rect(p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = "#ff80a5"; // pink highlight
-        ctx.stroke();
-
-        ctx.fillStyle = "#6d4c41";
-        ctx.font = "18px Poppins";
-        ctx.fillText(
-          `${p.class} (${Math.round(p.score * 100)}%)`, 
-          p.bbox[0], 
-          p.bbox[1] > 20 ? p.bbox[1] - 5 : 20
-        );
-      });
-
-      requestAnimationFrame(detectLoop);
+    async function startCam() {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      running = true;
+      detect();
     }
 
     // STOP CAMERA
-    function stopCamera() {
-      isRunning = false;
-      if (stream) stream.getTracks().forEach(track => track.stop());
-      statusText.innerText = "Kamera dimatikan ❌";
+    function stopCam() {
+      running = false;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      statusText.innerText = "Kamera dimatikan";
     }
 
-    document.getElementById("startBtn").onclick = startCamera;
-    document.getElementById("stopBtn").onclick = stopCamera;
+    // GET DOMINANT COLOR
+    function getDominantColor(imageData) {
+      let r = 0, g = 0, b = 0;
+      const len = imageData.data.length;
+
+      for (let i = 0; i < len; i += 4) {
+        r += imageData.data[i];
+        g += imageData.data[i+1];
+        b += imageData.data[i+2];
+      }
+
+      r = Math.round(r / (len/4));
+      g = Math.round(g / (len/4));
+      b = Math.round(b / (len/4));
+
+      return `rgb(${r},${g},${b})`;
+    }
+
+    // DETECT LOOP
+    async function detect() {
+      if (!running) return;
+
+      const predictions = await model.detect(video);
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      if (predictions.length > 0) {
+        const obj = predictions[0];
+
+        // draw box
+        ctx.strokeStyle = "#ff80a5";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(obj.bbox[0], obj.bbox[1], obj.bbox[2], obj.bbox[3]);
+
+        ctx.fillStyle = "#6d4c41";
+        ctx.font = "18px Poppins";
+        ctx.fillText(obj.class, obj.bbox[0], obj.bbox[1] - 8);
+
+        // extract color
+        const img = ctx.getImageData(
+          obj.bbox[0],
+          obj.bbox[1],
+          obj.bbox[2],
+          obj.bbox[3]
+        );
+
+        const dominant = getDominantColor(img);
+        colorBox.style.background = dominant;
+        colorText.innerText = dominant;
+      }
+
+      requestAnimationFrame(detect);
+    }
+
+    // EVENTS
+    document.getElementById("startBtn").onclick = startCam;
+    document.getElementById("stopBtn").onclick = stopCam;
   </script>
 
 </body>
