@@ -16,7 +16,7 @@
     body {
         margin: 0;
         font-family: "Poppins", sans-serif;
-        background: #f8e0e6; /* pink lembut */
+        background: #f8e0e6; 
         display: flex;
         justify-content: center;
         align-items: center;
@@ -25,7 +25,7 @@
     }
 
     .container {
-        background: #d9b59d; /* coklat susu */
+        background: #d9b59d;
         padding: 20px;
         border-radius: 20px;
         box-shadow: 0 0 20px rgba(0,0,0,0.2);
@@ -72,7 +72,6 @@
     button:hover {
         background: #d46b8d;
     }
-
 </style>
 </head>
 <body>
@@ -91,7 +90,10 @@
 <script>
     let model;
 
-    async function startCamera(){
+    /* ============================
+       FUNGSI BUKA KAMERA
+    =============================*/
+    async function startCamera() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             const video = document.getElementById("video");
@@ -102,23 +104,43 @@
             });
 
         } catch (e) {
-            alert("Gagal membuka kamera! Pastikan izin kamera diaktifkan.");
+            alert("Gagal membuka kamera! Aktifkan izin kamera.");
             console.log(e);
         }
     }
 
+    /* ============================
+       FUNGSI DETEKSI WARNA (RATA-RATA)
+    =============================*/
     function detectColor(ctx, x, y, w, h) {
-        // Ambil sampel tengah bounding box
-        const imgData = ctx.getImageData(x + w/2, y + h/2, 1, 1).data;
-        const [r, g, b] = imgData;
+        const imgData = ctx.getImageData(x, y, w, h).data;
 
-        if (r > 180 && g < 80 && b < 80) return "Merah";
-        if (g > 150 && r < 100) return "Hijau";
-        if (b > 150 && r < 100) return "Biru";
-        if (r > 200 && g > 180 && b < 80) return "Kuning";
+        let rSum = 0, gSum = 0, bSum = 0;
+        let count = w * h;
+
+        for (let i = 0; i < imgData.length; i += 4) {
+            rSum += imgData[i];
+            gSum += imgData[i + 1];
+            bSum += imgData[i + 2];
+        }
+
+        const r = rSum / count;
+        const g = gSum / count;
+        const b = bSum / count;
+
+        if (r > 180 && g < 100 && b < 100) return "Merah";
+        if (g > 150 && r < 120) return "Hijau";
+        if (b > 150 && r < 120) return "Biru";
+        if (r > 200 && g > 180 && b < 120) return "Kuning";
+        if (r > 150 && g < 120 && b > 150) return "Ungu";
+        if (r > 200 && g > 150 && b > 140) return "Oranye";
+
         return "Tidak diketahui";
     }
 
+    /* ============================
+       FUNGSI MULAI DETEKSI
+    =============================*/
     async function startDetection() {
         const video = document.getElementById("video");
         const canvas = document.getElementById("canvas");
@@ -149,7 +171,7 @@
 
                     const warna = detectColor(ctx, x, y, w, h);
 
-                    info += `Objek: ${pred.class} (${(pred.score*100).toFixed(1)}%) - Warna: ${warna}\n`;
+                    info += `Objek: ${pred.class} - Warna: ${warna}\n`;
 
                     ctx.fillStyle = "#ff4f8b";
                     ctx.fillText(`${pred.class} - ${warna}`, x, y - 5);
