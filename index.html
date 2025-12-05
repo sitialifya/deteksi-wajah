@@ -112,43 +112,59 @@
     /* ============================
        FUNGSI DETEKSI WARNA (RATA-RATA)
     =============================*/
+        function detectColor(ctx, x, y, w, h) {
+        const imgData = ctx.getImageData(x, y, w, h).data;
     
-              function detectColor(ctx, x, y, w, h) {
-            const imgData = ctx.getImageData(x, y, w, h).data;
-        
-            let rSum = 0, gSum = 0, bSum = 0;
-            let count = w * h;
-        
-            for (let i = 0; i < imgData.length; i += 4) {
-                rSum += imgData[i];
-                gSum += imgData[i + 1];
-                bSum += imgData[i + 2];
-            }
-        
-            const r = rSum / count;
-            const g = gSum / count;
-            const b = bSum / count;
-        
-            // === WARNA MERAH ===
-            if (r > 150 && g < 100 && b < 100) return "Merah";
-        
-            // === WARNA HIJAU ===
-            if (g > 150 && r < 120) return "Hijau";
-        
-            // === WARNA BIRU TERANG ===
-            if (b > 150 && r < 120 && g < 120) return "Biru";
-        
-            // === WARNA BIRU TUA (Nivea) ===
-            if (b > 80 && b < 150 && r < 100 && g < 100) return "Biru Tua";
-        
-            // === WARNA UNGU ===
-            if (r > 150 && b > 150 && g < 140) return "Ungu";
-        
-            // === WARNA KUNING ===
-            if (r > 200 && g > 180 && b < 120) return "Kuning";
-        
-            return "Tidak diketahui";
+        let rSum = 0, gSum = 0, bSum = 0;
+        let count = imgData.length / 4;
+    
+        for (let i = 0; i < imgData.length; i += 4) {
+            rSum += imgData[i];
+            gSum += imgData[i + 1];
+            bSum += imgData[i + 2];
         }
+    
+        const r = rSum / count;
+        const g = gSum / count;
+        const b = bSum / count;
+    
+        // Dominansi
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+    
+        // === MERAH ===
+        if (r === max && r - g > 40 && r - b > 40) return "Merah";
+    
+        // === HIJAU ===
+        if (g === max && g - r > 40 && g - b > 40) return "Hijau";
+    
+        // === BIRU TERANG ===
+        if (b === max && b - r > 50 && b - g > 50 && b > 150) return "Biru";
+    
+        // === BIRU TUA ===
+        if (b === max && b < 150 && (r + g) < b) return "Biru Tua";
+    
+        // === KUNING ===
+        if (r > 180 && g > 180 && b < 120) return "Kuning";
+    
+        // === UNGU ===
+        if (r > 120 && b > 120 && g < 100) return "Ungu";
+    
+        // === HITAM ===
+        if (r < 70 && g < 70 && b < 70) return "Hitam";
+    
+        // === PUTIH ===
+        if (r > 200 && g > 200 && b > 200) return "Putih";
+    
+        // === COKLAT ===
+        if (r > 120 && g < 100 && b < 80) return "Coklat";
+    
+        return "Tidak diketahui";
+    }
+
+             
+        
+    
 
 
     /* ============================
